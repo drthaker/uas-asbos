@@ -1,0 +1,48 @@
+# Konfigurasi Docker Compose untuk PRODUKSI di VPS Ubuntu 24.04 LTS.
+#
+# KENAPA memakai network_mode: host?
+# Hasil inspeksi Fase 0 membuktikan PostgreSQL (Fase 2) hanya listen di
+# 127.0.0.1:5432 dan pg_hba.conf hanya mengizinkan 127.0.0.1/32 (localhost-only).
+# Container bridge tidak bisa menjangkau 127.0.0.1 milik host.
+# Dengan network_mode: host + APP_BIND=127.0.0.1:
+#   1. Aplikasi dapat terhubung ke PostgreSQL di 127.0.0.1:5432 TANPA mengubah
+#      konfigurasi keamanan Fase 2 (postgresql.conf / pg_hba.conf).
+#   2. Gunicorn hanya bind ke 127.0.0.1:8000 sehingga port 8000 TIDAK terekspos
+#      ke internet publik dan hanya bisa diakses melalui Nginx Reverse Proxy.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventori-gudang-app
+    # Otomatis menyala lagi jika crash atau VPS reboot (kecuali dihentikan manual)
+    restart: unless-stopped
+    network_mode: host
+    # Memuat variabel sensitif (termasuk DB_PASSWORD) dari .env lokal yang tidak di-commit
+    env_file:
+      - .env
+    environment:
+      # Pastikan bind hanya di loopback agar port 8000 tidak terbuka ke publik
+      APP_BIND: "127.0.0.1"
+      APP_PORT: "${APP_PORT:-8000}"
+      DB_HOST: "${DB_HOST:-127.0.0.1}"
+      DB_PORT: "${DB_PORT:-5432}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os, urllib.request; p = os.getenv('APP_PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{p}/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Batasi ukuran log container agar tidak memenuhi kapasitas disk VPS
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

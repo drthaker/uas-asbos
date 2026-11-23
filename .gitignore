@@ -1,0 +1,29 @@
+# File environment lokal berisi kredensial/password (TIDAK BOLEH di-commit)
+.env
+.env.*
+!.env.example
+
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Inventory Ansible nyata (berisi IP/port/user VPS; commit hanya .example)
+ansible/inventory.ini
+ansible/*.retry
+
+# Kunci SSH / sertifikat privat (JANGAN PERNAH di-commit)
+*.pem
+*.key
+id_ed25519*
+id_rsa*
+
+# File sistem & editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

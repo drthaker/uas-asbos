@@ -1,0 +1,19 @@
+# Kecualikan rahasia, riwayat Git, dokumentasi, dan file non-aplikasi
+# agar image Docker tetap kecil, cepat di-build, dan bebas kebocoran kredensial.
+.env
+.env.*
+.git
+.gitignore
+.github
+docs
+ansible
+scripts
+db
+nginx
+docker-compose*.yml
+README.md
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv

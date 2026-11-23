@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Manajemen Inventori Gudang — Kelompok 3 ASBOS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <div>
+                <h1>Sistem Manajemen Inventori Gudang</h1>
+                <p class="subtitle">Kelompok 3 &bull; Administrasi Sistem Berbasis Open Source (SI UNTAN)</p>
+            </div>
+            <div class="topbar-badges">
+                <a class="badge-link" href="/api/barang" target="_blank">API JSON</a>
+                <a class="badge-link" href="/health" target="_blank">Healthcheck</a>
+                <span class="version-pill">{{ app_version }}</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        {% if db_error %}
+        <div class="alert alert-error">
+            Koneksi ke database PostgreSQL sedang bermasalah. Periksa layanan PostgreSQL dan konfigurasi <code>.env</code>.
+        </div>
+        {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Ringkasan KPI -->
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-label">Total Jenis Barang (SKU)</span>
+                <strong class="kpi-value">{{ summary.total_sku }}</strong>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">Total Unit di Gudang</span>
+                <strong class="kpi-value">{{ summary.total_unit }}</strong>
+            </div>
+            <div class="kpi-card kpi-warning">
+                <span class="kpi-label">Barang Stok Menipis</span>
+                <strong class="kpi-value">{{ summary.total_menipis }}</strong>
+            </div>
+        </section>
+
+        <!-- Form Operasional (Tambah Barang & Catat Transaksi) -->
+        <section class="forms-grid">
+            <div class="card">
+                <h2>Tambah Barang Baru</h2>
+                <form method="POST" action="{{ url_for('tambah_barang') }}" class="form-stack">
+                    <div class="form-row">
+                        <label>
+                            SKU (Unik)
+                            <input type="text" name="sku" placeholder="Contoh: ELK-003" required maxlength="50">
+                        </label>
+                        <label>
+                            Kategori
+                            <select name="kategori_id" required>
+                                <option value="">-- Pilih Kategori --</option>
+                                {% for kat in kategori_list %}
+                                <option value="{{ kat.id }}">{{ kat.nama }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <label>
+                        Nama Barang
+                        <input type="text" name="nama" placeholder="Contoh: Timbangan Digital 50kg" required maxlength="150">
+                    </label>
+                    <div class="form-row three-col">
+                        <label>
+                            Stok Awal
+                            <input type="number" name="stok" min="0" value="0" required>
+                        </label>
+                        <label>
+                            Satuan
+                            <input type="text" name="satuan" placeholder="unit / pcs / roll" required maxlength="30">
+                        </label>
+                        <label>
+                            Stok Minimum
+                            <input type="number" name="stok_minimum" min="0" value="5" required>
+                        </label>
+                    </div>
+                    <label>
+                        Lokasi Rak
+                        <input type="text" name="lokasi_rak" placeholder="Contoh: RAK-A3" required maxlength="50">
+                    </label>
+                    <button type="submit" class="btn btn-primary">Simpan Barang</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h2>Catat Transaksi Stok</h2>
+                <form method="POST" action="{{ url_for('catat_transaksi') }}" class="form-stack">
+                    <label>
+                        Pilih Barang
+                        <select name="barang_id" required>
+                            <option value="">-- Pilih Barang --</option>
+                            {% for b in semua_barang %}
+                            <option value="{{ b.id }}">{{ b.sku }} - {{ b.nama }} (Stok: {{ b.stok }} {{ b.satuan }})</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <div class="form-row">
+                        <label>
+                            Tipe Transaksi
+                            <select name="tipe" required>
+                                <option value="masuk">Stok Masuk (+)</option>
+                                <option value="keluar">Stok Keluar (-)</option>
+                            </select>
+                        </label>
+                        <label>
+                            Jumlah
+                            <input type="number" name="jumlah" min="1" value="1" required>
+                        </label>
+                    </div>
+                    <label>
+                        Catatan
+                        <input type="text" name="catatan" placeholder="Contoh: Restock supplier / Pengiriman order">
+                    </label>
+                    <button type="submit" class="btn btn-secondary">Catat Transaksi</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Daftar Barang -->
+        <section class="card">
+            <div class="section-header">
+                <h2>Daftar Inventori Barang</h2>
+                <form method="GET" action="{{ url_for('index') }}" class="filter-bar">
+                    <input type="text" name="q" value="{{ keyword }}" placeholder="Cari SKU atau nama barang...">
+                    <select name="kategori">
+                        <option value="">Semua Kategori</option>
+                        {% for kat in kategori_list %}
+                        <option value="{{ kat.id }}" {% if kategori_filter == (kat.id|string) %}selected{% endif %}>{{ kat.nama }}</option>
+                        {% endfor %}
+                    </select>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="menipis" value="1" {% if hanya_menipis %}checked{% endif %}>
+                        Hanya stok menipis
+                    </label>
+                    <button type="submit" class="btn btn-outline">Filter</button>
+                    {% if keyword or kategori_filter or hanya_menipis %}
+                    <a href="{{ url_for('index') }}" class="btn btn-link">Reset</a>
+                    {% endif %}
+                </form>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Nama Barang</th>
+                            <th>Kategori</th>
+                            <th>Lokasi Rak</th>
+                            <th>Stok</th>
+                            <th>Stok Min.</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in barang_list %}
+                        <tr class="{% if item.stok_menipis %}row-low-stock{% endif %}">
+                            <td><code>{{ item.sku }}</code></td>
+                            <td><strong>{{ item.nama }}</strong></td>
+                            <td>{{ item.kategori_nama }}</td>
+                            <td>{{ item.lokasi_rak }}</td>
+                            <td><strong>{{ item.stok }}</strong> {{ item.satuan }}</td>
+                            <td>{{ item.stok_minimum }} {{ item.satuan }}</td>
+                            <td>
+                                {% if item.stok_menipis %}
+                                <span class="status-badge status-low">Stok Menipis</span>
+                                {% else %}
+                                <span class="status-badge status-ok">Aman</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="empty-cell">Belum ada data barang yang sesuai filter.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Riwayat Transaksi Terbaru -->
+        <section class="card">
+            <h2>10 Riwayat Transaksi Stok Terbaru</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Waktu (UTC)</th>
+                            <th>SKU</th>
+                            <th>Barang</th>
+                            <th>Tipe</th>
+                            <th>Jumlah</th>
+                            <th>Catatan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trx in transaksi_list %}
+                        <tr>
+                            <td>{{ trx.waktu.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td><code>{{ trx.sku }}</code></td>
+                            <td>{{ trx.barang_nama }}</td>
+                            <td>
+                                {% if trx.tipe == 'masuk' %}
+                                <span class="status-badge status-ok">MASUK</span>
+                                {% else %}
+                                <span class="status-badge status-out">KELUAR</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ trx.jumlah }} {{ trx.satuan }}</td>
+                            <td>{{ trx.catatan or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="empty-cell">Belum ada riwayat transaksi stok.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            Sistem Manajemen Inventori Gudang &bull; Kelompok 3 ASBOS UNTAN &bull; Nginx Reverse Proxy + Docker + PostgreSQL
+        </div>
+    </footer>
+</body>
+</html>

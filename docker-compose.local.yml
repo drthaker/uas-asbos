@@ -1,0 +1,47 @@
+# Konfigurasi Docker Compose KHUSUS PENGUJIAN LOKAL di laptop (Docker Desktop).
+# JANGAN digunakan untuk produksi di VPS karena membuat container PostgreSQL terpisah.
+#
+# Cara pakai di laptop:
+#   docker compose -f docker-compose.local.yml up --build
+#   Buka http://localhost:8000
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: inventori-local-db
+    environment:
+      POSTGRES_DB: inventori_gudang_db
+      POSTGRES_USER: inventori_user
+      # Password dummy khusus pengembangan lokal (bukan password VPS)
+      POSTGRES_PASSWORD: local_dev_password
+    volumes:
+      # Inisialisasi otomatis skema dan data awal saat volume DB masih kosong
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventori_user -d inventori_gudang_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventori-local-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: inventori_gudang_db
+      DB_USER: inventori_user
+      DB_PASSWORD: local_dev_password
+      # Di bridge network lokal, bind 0.0.0.0 agar port mapping 8000:8000 bisa diakses browser laptop
+      APP_BIND: "0.0.0.0"
+      APP_PORT: "8000"
+      APP_VERSION: "v1.0.0-local"
+      SECRET_KEY: "local-dev-secret-key"
+    ports:
+      - "127.0.0.1:8000:8000"
