@@ -1,0 +1,7 @@
+# Pastikan seluruh skrip shell dan konfigurasi Linux selalu memakai akhir baris LF
+# agar tidak gagal dijalankan di Ubuntu saat di-edit/commit dari Windows.
+*.sh text eol=lf
+*.conf text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf

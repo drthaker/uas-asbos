@@ -1,0 +1,94 @@
+# Pipeline CI/CD Sistem Manajemen Inventori Gudang (Fase 4 - ASBOS Kelompok 3)
+#
+# Arsitektur dua tahap:
+#   1. Job `test`  : memvalidasi sintaks Python (py_compile), gaya kode (flake8),
+#                    dan build Docker image sebelum menyentuh VPS produksi.
+#   2. Job `deploy`: hanya berjalan jika `test` lulus dan branch adalah `main`,
+#                    menggunakan OpenSSH native + pinned host key (tanpa action pihak ketiga).
+
+name: CI/CD Inventori Gudang
+
+on:
+  push:
+    branches:
+      - main
+  # Memungkinkan eksekusi manual dari tab Actions GitHub (berguna saat uji/demo)
+  workflow_dispatch:
+
+# Mencegah dua proses deploy berjalan bersamaan ke VPS yang sama.
+# cancel-in-progress: false memastikan deploy yang sedang berjalan selesai rapi.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Uji Sintaks, Lint & Build Docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repositori
+        uses: actions/checkout@v4
+
+      - name: Siapkan Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instal dependensi aplikasi dan flake8
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt flake8
+
+      - name: Cek kompilasi Python dan linting flake8
+        run: |
+          python -m py_compile app.py
+          flake8 app.py
+
+      - name: Validasi build Dockerfile
+        run: |
+          docker build -t inventori-gudang:ci .
+
+  deploy:
+    name: Deploy Otomatis ke VPS
+    needs: test
+    # Pastikan hanya branch main yang boleh men-deploy ke produksi
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Siapkan kunci SSH khusus CI dan pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          # Tulis private key khusus CI dengan izin 600 (syarat wajib OpenSSH)
+          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pin host key VPS ke known_hosts untuk mencegah serangan MITM
+          # (lebih aman dibanding StrictHostKeyChecking=no)
+          printf '%s\n' "${VPS_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Jalankan skrip deployment di VPS via OpenSSH native
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          # Menggunakan OpenSSH native runner (bukan action pihak ketiga) untuk
+          # meminimalkan risiko supply-chain dan tetap sederhana serta transparan.
+          ssh -i ~/.ssh/deploy_key \
+              -p "${VPS_PORT}" \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ConnectTimeout=15 \
+              "${VPS_USER}@${VPS_HOST}" \
+              "cd /var/www/inventori-gudang && git fetch origin main && git checkout origin/main -- scripts/deploy.sh && chmod +x scripts/deploy.sh && bash scripts/deploy.sh"
+
+      - name: Bersihkan kunci SSH sementara dari runner
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts
