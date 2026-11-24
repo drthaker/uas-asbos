@@ -1,0 +1,11 @@
+# Contoh berkas inventory Ansible (AMAN di-commit karena hanya placeholder).
+# Salin menjadi `inventory.ini` (masuk .gitignore) lalu isi data VPS asli.
+# Nama grup [webservers] mengikuti konvensi Buku Ajar ASBOS (Bab X, hlm. 197).
+
+[webservers]
+asbos-tiga ansible_host=<IP_VPS>
+
+[webservers:vars]
+ansible_port=<SSH_PORT>
+ansible_user=<SSH_USER>
+ansible_ssh_private_key_file=~/.ssh/id_ed25519

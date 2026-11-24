@@ -1,0 +1,17 @@
+# Bukti Fase 4 — CI/CD GitHub Actions
+# Repository: https://github.com/drthaker/uas-asbos (branch: main)
+# Commit awal CI/CD: b839085 ("ci: tambah pipeline GitHub Actions, deploy.sh, bukti Fase 3, dan skrip tim (Fase 4)")
+# Catatan: Tanpa rahasia/password/private key.
+
+=== 1. KOMPONEN YANG SUDAH TERPASANG DI REPOSITORY ===
+- Workflow CI/CD  : .github/workflows/deploy.yml (trigger push main + workflow_dispatch, concurrency, job test + job deploy via OpenSSH native & pinned VPS_HOST_KEY)
+- Skrip deploy    : scripts/deploy.sh (set -euo pipefail, git fetch + reset --hard origin/main, docker compose up -d --build, healthcheck timeout 60s, docker image prune -f)
+- Skrip tim       : scripts/backup_db.sh & scripts/analyze_log.sh (disalin dari /opt/scripts, diaudit bebas password)
+- Keamanan Git    : .env diabaikan (.gitignore); hanya .env.example yang di-commit; private key CI sementara dihapus dari laptop setelah masuk GitHub Secrets
+
+=== 2. STATUS PIPELINE GITHUB ACTIONS ===
+- Konfirmasi user (2026-11-24): hasil eksekusi GitHub Actions berstatus HIJAU (sukses).
+- Catatan troubleshooting nyata: `ssh-keyscan` di Windows mengalami error KEX `sntrup761x25519-sha512@openssh.com` terhadap OpenSSH 9.6p1 Ubuntu 24.04; diselesaikan dengan membaca host key langsung dari `/etc/ssh/ssh_host_ed25519_key.pub` di VPS (lebih aman dari risiko MITM).
+
+=== 3. LOG DETAIL & UJI END-TO-END (LANGKAH 4.7) ===
+[TODO] Tempelkan salinan log singkat job "Deploy Otomatis ke VPS" dari GitHub Actions (baris `[deploy] ...`) dan hasil verifikasi perubahan teks di http://103.55.37.230/ setelah push uji kecil.

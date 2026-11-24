@@ -1,0 +1,102 @@
+---
+# Ansible Playbook Idempoten — Fase 5 (Infrastructure as Code)
+# Kelompok 3 ASBOS — Sistem Manajemen Inventori Gudang
+#
+# KENAPA memakai Ansible Playbook?
+# Sesuai Buku Ajar ASBOS Bab X (hlm. 189–200), pendekatan deklaratif & idempoten
+# mencegah "configuration drift" dan memastikan penyediaan server replika
+# selalu menghasilkan kondisi akhir yang identik tanpa error walau dijalankan
+# berulang kali (eksekusi kedua menghasilkan changed=0).
+
+- name: Konfigurasi Nginx Reverse Proxy dan User Sistem Monitoring
+  hosts: webservers
+  # Eskalasi hak akses ke sudo karena instalasi paket, pembuatan user,
+  # dan pengelolaan /etc/nginx memerlukan izin administrator.
+  become: true
+
+  vars:
+    nginx_site_name: inventori-gudang.conf
+    nginx_config_src: "../nginx/inventori-gudang.conf"
+    nginx_available_path: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    nginx_enabled_path: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # TUGAS 1: Instalasi paket Nginx dan aktivasi layanan systemd
+    # Menggunakan cache_valid_time: 3600 dan state: present agar tidak memicu
+    # status changed saat dijalankan ulang (menjaga idempotensi).
+    # -------------------------------------------------------------------------
+    - name: Pastikan paket Nginx terinstal melalui APT
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    # Menggunakan modul ansible.builtin.systemd_service sesuai Buku Ajar ASBOS
+    # Bab X (Kode Sumber 10.4, hlm. 199) untuk mengelola unit systemd di Ubuntu.
+    - name: Pastikan layanan Nginx aktif saat ini dan otomatis saat boot
+      ansible.builtin.systemd_service:
+        name: nginx
+        state: started
+        enabled: true
+
+    # -------------------------------------------------------------------------
+    # TUGAS 2: Pembuatan user sistem "monitoring" (prinsip Least Privilege)
+    # system: true + shell /usr/sbin/nologin + password_lock: true memastikan
+    # akun khusus ini tidak dapat dipakai login interaktif maupun lewat SSH.
+    # -------------------------------------------------------------------------
+    - name: Buat user sistem monitoring tanpa akses login interaktif
+      ansible.builtin.user:
+        name: monitoring
+        comment: "User sistem monitoring server (Ansible Fase 5)"
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+        password_lock: true
+        state: present
+
+    # -------------------------------------------------------------------------
+    # TUGAS 3: Distribusi konfigurasi Nginx Reverse Proxy secara aman
+    # backup: true menyimpan cadangan otomatis jika file lama berbeda agar
+    # konfigurasi produksi yang sedang berjalan tidak hilang/rusak.
+    # -------------------------------------------------------------------------
+    - name: Salin konfigurasi Nginx Reverse Proxy dari repositori lokal
+      ansible.builtin.copy:
+        src: "{{ nginx_config_src }}"
+        dest: "{{ nginx_available_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: Validasi dan reload Nginx
+
+    - name: Aktifkan server block inventori-gudang melalui symbolic link
+      ansible.builtin.file:
+        src: "{{ nginx_available_path }}"
+        dest: "{{ nginx_enabled_path }}"
+        state: link
+      notify: Validasi dan reload Nginx
+
+    # Hapus site default Nginx yang juga mengandung IPv6 [::]:80
+    # agar tidak bentrok dengan server block inventori-gudang.
+    - name: Nonaktifkan situs default bawaan Nginx
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Validasi dan reload Nginx
+
+  # Handler hanya dieksekusi JIKA ada perubahan konfigurasi Nginx (idempoten).
+  # Urutan eksekusi dijamin: validasi `nginx -t` lebih dulu, baru graceful reload.
+  handlers:
+    - name: Validasi sintaks konfigurasi Nginx sebelum reload
+      listen: Validasi dan reload Nginx
+      ansible.builtin.command:
+        cmd: /usr/sbin/nginx -t
+      changed_when: false
+
+    - name: Muat ulang layanan Nginx secara graceful tanpa downtime
+      listen: Validasi dan reload Nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        state: reloaded
