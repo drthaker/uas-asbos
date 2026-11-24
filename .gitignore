@@ -27,3 +27,7 @@ id_rsa*
 Thumbs.db
 .vscode/
 .idea/
+
+# Bahan kerja internal laporan & screenshot (tetap disimpan lokal, tidak di-push ke repo publik)
+ss/
+docs/
